@@ -15,7 +15,7 @@ Retrieval-Augmented Generation (RAG) systems are fundamentally limited by the qu
 
 Our work introduces a formal **dialectical process** that synthesizes the strengths of these approaches, creating a system where credibility is not a pre-supposed weight but an emergent property of an argument's ability to withstand rigorous, evidence-based challenge.
 
-![Framework Architecture](assets/architecture.png)
+![Framework Architecture](assests/architecture.png)
 *Fig 1: An overview of our proposed dialectical framework, illustrating the three-phase process of conflict resolution.*
 
 ---
