@@ -1,25 +1,31 @@
+"""
+Orchestrates the multi-agent dialectical debate process.
+
+This module contains the DebateOrchestrator class, which programmatically
+controls the three-phase debate (Thesis, Antithesis, Synthesis) for a given
+query and set of documents. It manages the flow of information between agents,
+ensuring a structured and deterministic interaction.
+"""
 import autogen
 import json
 import logging
 from typing import Dict, List, Any
 
-# Import the classes we've already built
-from agent_definitions import FrameworkAgents, LLM_CONFIG
+# Import the classes from our other modules
+from agent_definitions import FrameworkAgents
 from data_loader import QueryContext
 
-# --- Setup Logging ---
+# Configure basic logging for the application
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
 class DebateOrchestrator:
     """
-    Orchestrates the entire three-phase dialectical debate for a single query.
+    Manages the entire three-phase dialectical debate for a single query.
     """
     def __init__(self):
-        """
-        Initializes the orchestrator with the necessary agents.
-        """
+        """Initializes the orchestrator with the necessary agents."""
         self.agents = FrameworkAgents()
-        # The UserProxyAgent acts as the primary interface to initiate chats.
+        # The UserProxyAgent acts as the programmatic entry point to initiate chats.
         self.chat_initiator = autogen.UserProxyAgent(
             name="Chat_Initiator",
             human_input_mode="NEVER",
@@ -30,15 +36,15 @@ class DebateOrchestrator:
     def _execute_single_turn_chat(self, recipient_agent: autogen.AssistantAgent, message: str) -> str:
         """
         A helper function to run a single, atomic request-response chat turn.
-        This is the core communication mechanism.
+        This ensures the orchestrator maintains full control over the debate flow.
         """
         self.chat_initiator.initiate_chat(
             recipient_agent,
             message=message,
             max_turns=1,
-            silent=True # We will control logging ourselves.
+            silent=True  # Suppress default AutoGen logging for cleaner output
         )
-        # The response is the last message in the chat history.
+        # The agent's response is the last message in the chat history.
         return self.chat_initiator.last_message(recipient_agent)["content"]
 
     def run_debate(self, query_context: QueryContext) -> Dict[str, Any]:
@@ -46,20 +52,21 @@ class DebateOrchestrator:
         Executes the full, three-phase dialectical debate for a given QueryContext.
 
         Args:
-            query_context (QueryContext): The standardized data object containing the
-                                          query, documents, and ground truth.
+            query_context: The standardized data object containing the query,
+                           documents, and ground truth.
 
         Returns:
-            A dictionary containing the full debate transcript and the final answer.
+            A dictionary containing the full debate transcript.
         """
         debate_transcript = {}
         
-        # --- PHASE 1: THESIS GENERATION (Opening Statements) ---
+        # --- PHASE 1: THESIS GENERATION ---
+        # Each Proponent Agent generates an initial thesis based on its single document.
         logging.info(f"--- Starting Phase 1: Thesis Generation for Query ID: {query_context.query_id} ---")
         opening_statements = {}
         for i, doc in enumerate(query_context.documents):
             agent_name = f"agent_{i+1}"
-            prompt = f"""Here is the query and a single document. Your task is to generate a structured thesis.
+            prompt = f"""Your task is to generate a structured thesis based on the query and the single document provided.
 
 Query: "{query_context.question}"
 
@@ -74,17 +81,20 @@ Document (doc_id: {doc['doc_id']}):
                 opening_statements[agent_name] = json.loads(response_str)
             except json.JSONDecodeError:
                 logging.warning(f"  > FAILED to parse JSON from {agent_name}. Storing raw response.")
-                opening_statements[agent_name] = {"answer": "JSON PARSE ERROR", "chain_of_thought": [response_str]}
+                opening_statements[agent_name] = {"answer": "JSON_PARSE_ERROR", "chain_of_thought": [response_str]}
         
         debate_transcript["phase_1_opening_statements"] = opening_statements
         logging.info("--- Phase 1 Complete ---")
 
-        # --- PHASE 2: ANTITHESIS GENERATION (Cross-Examination) ---
+        # --- PHASE 2: ANTITHESIS GENERATION & REBUTTAL ---
+        # The Devil's Advocate challenges each thesis, and the Proponents must respond.
         logging.info("--- Starting Phase 2: Antithesis Generation & Rebuttal ---")
+        
         # 2a: The Challenge
-        challenge_prompt = f"""Here are the opening statements from multiple Proponent Agents and the full set of source documents. Your task is to act as the Devil's Advocate and generate targeted, evidence-based challenges.
+        # The Devil's Advocate receives the full context: the query, all theses, and all documents.
+        challenge_prompt = f"""You are the Devil's Advocate. Your task is to generate targeted, evidence-based challenges based on the original query and the provided evidence.
 
-Query: "{query_context.question}"
+Original Query: "{query_context.question}"
 
 --- OPENING STATEMENTS ---
 {json.dumps(opening_statements, indent=2)}
@@ -105,6 +115,7 @@ Query: "{query_context.question}"
         debate_transcript["phase_2a_challenges"] = challenges
 
         # 2b: The Rebuttal
+        # Each Proponent Agent must now defend its thesis against the specific challenge.
         rebuttals = {}
         for i, doc in enumerate(query_context.documents):
             agent_name = f"agent_{i+1}"
@@ -114,23 +125,27 @@ Query: "{query_context.question}"
                 logging.warning(f"  > No challenge found for {agent_name}. Skipping rebuttal.")
                 continue
 
-            rebuttal_prompt = f"""You are {agent_name}. You must formulate a rebuttal to a direct challenge from the Devil's Advocate. Follow the Structured Rebuttal Protocol.
+            # The rebuttal prompt explicitly includes the Structured Rebuttal Protocol.
+            rebuttal_prompt = f"""You are {agent_name}. You must formulate a rebuttal to a direct challenge.
 
-Original Query: "{query_context.question}"
-Your Assigned Document (doc_id: {doc['doc_id']}):
----
-{doc['text']}
----
-Your Opening Statement:
----
-{json.dumps(opening_statements.get(agent_name, {}), indent=2)}
----
-THE CHALLENGE YOU MUST ADDRESS:
----
-"{challenges[challenge_key]}"
----
+**Your Task:** Follow the Structured Rebuttal Protocol below precisely.
 
-Now, provide your rebuttal in the required structured JSON format (answer, chain_of_thought).
+**Structured Rebuttal Protocol:**
+1.  **Acknowledge Challenge:** Start by paraphrasing the core of the challenge you received.
+2.  **Review Contradictory Evidence:** Explicitly state the piece of evidence from the other document(s) that your challenger presented.
+3.  **Argument & Justification:** Choose ONE of the following paths and justify it:
+    *   **DEFEND:** Argue why your original evidence/reasoning is superior.
+    *   **CONCEDE:** Acknowledge that the contradictory evidence is superior and that your initial answer was flawed.
+    *   **RECONCILE:** Explain how both pieces of evidence can be true simultaneously (e.g., in cases of ambiguity).
+4.  **Final Revised Statement:** Provide your final, updated answer and Chain-of-Thought in the required JSON format.
+
+**Context for your Rebuttal:**
+- Original Query: "{query_context.question}"
+- Your Assigned Document (doc_id: {doc['doc_id']}): {doc['text']}
+- Your Opening Statement: {json.dumps(opening_statements.get(agent_name, {}), indent=2)}
+- THE CHALLENGE YOU MUST ADDRESS: "{challenges[challenge_key]}"
+
+Now, provide your rebuttal. Your entire response must be a single JSON object.
 """
             logging.info(f"  > Getting rebuttal from {agent_name}...")
             rebuttal_str = self._execute_single_turn_chat(self.agents.proponent_agent, rebuttal_prompt)
@@ -138,14 +153,15 @@ Now, provide your rebuttal in the required structured JSON format (answer, chain
                 rebuttals[agent_name] = json.loads(rebuttal_str)
             except json.JSONDecodeError:
                 logging.warning(f"  > FAILED to parse JSON rebuttal from {agent_name}. Storing raw response.")
-                rebuttals[agent_name] = {"answer": "JSON PARSE ERROR", "chain_of_thought": [rebuttal_str]}
+                rebuttals[agent_name] = {"answer": "JSON_PARSE_ERROR", "chain_of_thought": [rebuttal_str]}
 
         debate_transcript["phase_2b_rebuttals"] = rebuttals
         logging.info("--- Phase 2 Complete ---")
 
         # --- PHASE 3: SYNTHESIS (Final Judgment) ---
+        # The Aggregator-Judge reviews the entire debate to produce a final, conclusive answer.
         logging.info("--- Starting Phase 3: Synthesis ---")
-        final_prompt = f"""You are the Aggregator-Judge. Below is the full transcript of a debate. Your task is to synthesize this interaction and produce the most logically sound and complete final answer.
+        final_prompt = f"""You are the Aggregator-Judge. Below is the full transcript of a debate. Your task is to synthesize this interaction and produce the SINGLE most likely correct and conclusive final answer, as per your core instructions.
 
 Original Query: "{query_context.question}"
 
@@ -153,7 +169,7 @@ Original Query: "{query_context.question}"
 {json.dumps(debate_transcript, indent=2)}
 ---
 
-Based on your analysis of the entire debate, provide the final, synthesized answer in the required JSON format.
+Based on your analysis of the entire debate, provide the final, synthesized answer in the required JSON format. Remember to be decisive and resolve conflicts.
 """
         logging.info("  > Getting final answer from Aggregator-Judge...")
         final_answer_str = self._execute_single_turn_chat(self.agents.aggregator_judge_agent, final_prompt)
@@ -166,49 +182,4 @@ Based on your analysis of the entire debate, provide the final, synthesized answ
         debate_transcript["phase_3_final_answer"] = final_answer
         logging.info("--- Phase 3 Complete ---")
         
-        return debate_transcript
-
-
-# --- Built-in End-to-End Test Block ---
-if __name__ == "__main__":
-    logging.info("--- Running Built-in End-to-End Test for Orchestrator ---")
-
-    # We will use our classic "Michael Jordan" example as a hard-coded test case.
-    # This simulates loading one QueryContext object.
-    test_query = QueryContext(
-        query_id="test_michael_jordan",
-        question="In which year was Michael Jordan born?",
-        documents=[
-            {"doc_id": "doc_1", "text": "Michael Jeffrey Jordan (born February 17, 1963) is an American businessman and former professional basketball player."},
-            {"doc_id": "doc_2", "text": "Michael I. Jordan (born February 25, 1956) is an American scientist, professor at the University of California, Berkeley."},
-            {"doc_id": "doc_3", "text": "A popular blog post claims that basketball star Michael Jordan was born in 1998, a common misconception."}
-        ],
-        gold_answers=["1963", "1956"],
-        wrong_answers=["1998"]
-    )
-
-    try:
-        # 1. Initialize the orchestrator
-        orchestrator = DebateOrchestrator()
-        
-        # 2. Run the full debate on our single test case
-        final_transcript = orchestrator.run_debate(test_query)
-        
-        # 3. Print the results for manual inspection
-        print("\n" + "="*80)
-        print("--- DEBATE COMPLETE. FINAL TRANSCRIPT: ---")
-        print(json.dumps(final_transcript, indent=2))
-        print("="*80)
-        
-        final_answer = final_transcript.get("phase_3_final_answer", {}).get("final_answer", "ERROR: No final answer found.")
-        
-        logging.info(f"FINAL SYNTHESIZED ANSWER: {final_answer}")
-        
-        # Verification Check
-        if "ERROR" not in final_answer and final_answer:
-            logging.info("--- ORCHESTRATOR TEST PASSED SUCCESSFULLY ---")
-        else:
-            logging.error("--- ORCHESTRATOR TEST FAILED: Final answer was not generated correctly. ---")
-
-    except Exception as e:
-        logging.error(f"TEST FAILED: An unexpected error occurred during the orchestration test: {e}", exc_info=True)
+        return debate_transcript```
