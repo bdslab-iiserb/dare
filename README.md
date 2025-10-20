@@ -52,27 +52,99 @@ The debate is not a free-form chat but a controlled sequence managed by the `scr
 
 ## 3. The Dialectic in Action: A Concrete Example
 
-To illustrate how our framework's architecture leads to superior outcomes, consider a real example from the RAMDocs dataset for the query: `Who is the director of the film "Lahu Ke Do Rang"?`
+To illustrate how our framework's architecture leads to superior outcomes, consider a real example from the RAMDocs dataset. This case study demonstrates how the dialectical process resolves a direct factual contradiction where simpler systems would fail.
 
-#### The Conflicting Evidence
-*   **Document 1 (Correct):** Contains the direct statement, `"...directed by Mahesh Bhatt."`
-*   **Document 2 (Misinformation):** Contains a metadata tag, `"...Categories: ... Films directed by Raj Kapoor..."`
+#### The Query and Conflicting Evidence
 
-#### Our Framework's Process
+> **Query:** `Who is the director of the film "Lahu Ke Do Rang"?`
 
-> **1. Thesis Generation:**
-> *   `Agent_1` proposes the thesis: `(answer: "Mahesh Bhatt", CoT: ["...based on direct statement..."])`.
-> *   `Agent_2` proposes the thesis: `(answer: "Raj Kapoor", CoT: ["...based on category tag..."])`.
+The system retrieves two conflicting documents:
+*   **Document 1 (Correct Source):** Contains the direct, unambiguous statement in the body of the text:
+    > `"...Lahu Ke Do Rang is a 1979 Hindi movie directed by **Mahesh Bhatt**."`
+*   **Document 2 (Misinformation Source):** Contains a metadata tag at the end of the document:
+    > `"...Categories: ... Films directed by **Raj Kapoor**..."`
 
-> **2. Antithesis Generation (The Critical Step):**
-> *   The `Devils_Advocate`, seeing both documents and both theses, assesses the quality of the evidence.
-> *   It issues a targeted challenge to `Agent_2`: *"Justify why a category tag from your document should be trusted over a direct textual statement of direction from Document 1."*
+---
 
-> **3. Rebuttal:**
-> *   `Agent_2`, forced to confront the superior evidence, is unable to logically defend its position and **concedes** in its rebuttal.
+#### Why Simpler Systems Fail: The Gap We Address
 
-> **4. Synthesis:**
-> *   The `Aggregator_Judge` receives the debate transcript. It does not see a 1-1 tie. It sees one claim that was successfully defended and another that was formally retracted under cross-examination.
-> *   Following its instruction to prioritize defended arguments, it confidently and correctly produces the final answer: **Mahesh Bhatt**.
+A robust system must be able to resolve this conflict. However, prevailing paradigms struggle:
+
+*   **Naive RAG (Concatenation):** A standard RAG system would feed both conflicting phrases into a single context. The LLM, faced with "directed by Mahesh Bhatt" and "directed by Raj Kapoor," has no principled way to choose. It is likely to hallucinate a co-direction, pick one at random, or simply state that the sources are conflicting, failing to provide a conclusive answer.
+
+*   **Flat Debate (e.g., MADAM-RAG):** In a passive debate, the process would stall.
+    1.  `Agent_1` would propose "Mahesh Bhatt."
+    2.  `Agent_2` would propose "Raj Kapoor."
+    3.  The Aggregator would report: "There is a conflict between the agents."
+    4.  In the next round, both agents, still looking only at their own documents, would stubbornly repeat their initial claims. The debate cannot progress to a resolution; it can only identify the deadlock.
+
+---
+
+#### Our Framework's Dialectical Resolution
+
+Our framework is explicitly designed to break such deadlocks through a structured, evidence-aware process.
+
+> **Phase 1: Thesis Generation**
+>
+> The Proponent Agents generate their initial theses with transparent reasoning:
+>
+> *   **`Agent_1`'s Thesis (`o_1`):**
+>     ```json
+>     {
+>       "answer": "Mahesh Bhatt",
+>       "chain_of_thought": [
+>         "Step 1: The query asks for the film's director.",
+>         "Step 2: My document contains the direct statement: '...directed by Mahesh Bhatt'.",
+>         "Step 3: Therefore, the director is Mahesh Bhatt."
+>       ]
+>     }
+>     ```
+> *   **`Agent_2`'s Thesis (`o_2`):**
+>     ```json
+>     {
+>       "answer": "Raj Kapoor",
+>       "chain_of_thought": [
+>         "Step 1: The query asks for the film's director.",
+>         "Step 2: My document contains the category tag: 'Films directed by Raj Kapoor'.",
+>         "Step 3: Therefore, the director is Raj Kapoor."
+>       ]
+>     }
+>     ```
+
+> **Phase 2: Antithesis Generation (The Critical Step)**
+>
+> The `Devils_Advocate`, having access to **both documents and both theses**, does not just see a conflict; it assesses the quality of the underlying evidence. It operationalizes a burden of proof by formulating a targeted challenge.
+>
+> *   **The Devil's Advocate's Challenge to `Agent_2` (`q_DA,2`):**
+>     > "Your thesis is based on a metadata category tag in Document 2. However, Document 1 contains the explicit, declarative statement 'directed by Mahesh Bhatt.' **Justify why a category tag should be considered more authoritative than a direct textual statement.**"
+
+> **Phase 2 (cont.): The Rebuttal**
+>
+> `Agent_2`, governed by the Structured Rebuttal Protocol, is now forced to confront the superior evidence presented in the challenge. It cannot simply repeat its claim.
+>
+> *   **`Agent_2`'s Rebuttal (`o_2^(2)`):**
+>     ```json
+>     {
+>       "answer": "Mahesh Bhatt",
+>       "chain_of_thought": [
+>         "Step 1: I acknowledge the challenge regarding the conflicting evidence.",
+>         "Step 2: The contradictory evidence is the direct statement 'directed by Mahesh Bhatt' from Document 1.",
+>         "Step 3: I concede. A direct statement within the body of an article is stronger evidence than a metadata category tag. My initial reasoning was based on weaker evidence.",
+>         "Step 4: I am revising my answer to 'Mahesh Bhatt' to align with the more authoritative evidence presented."
+>       ]
+>     }
+>     ```
+
+> **Phase 3: Synthesis**
+>
+> The `Aggregator_Judge` receives the full debate transcript. It does not see a 1-1 tie that needs to be broken. It sees a clear, logical progression:
+>
+> 1.  The thesis for "Mahesh Bhatt" was successfully defended (as its evidence was superior).
+> 2.  The thesis for "Raj Kapoor" was challenged and **formally retracted** under cross-examination.
+>
+> Following its instruction to prioritize defended arguments, it confidently and correctly produces the final, conclusive answer.
+>
+> *   **Final Synthesized Answer:**
+>     > **Mahesh Bhatt**
 
 This example demonstrates how the dialectical structure, enabled by the evidence-aware Devil's Advocate, allows the system to resolve conflicts based on the logical strength of the evidence—a capability absent in simpler debate or aggregation systems.
